@@ -82,6 +82,10 @@ export class SkeletonMeshMaterial extends THREE.ShaderMaterial {
 	};
 }
 
+// https://webstatic.mihoyo.com/ys/event/e20221028nahida/index.html?game_biz=hk4e_cn&mhy_presentation_style=fullscreen&mhy_auth_required=true&mhy_landscape=true&mhy_hide_status_bar=true&plat=common
+// https://webstatic.mihoyo.com/ys/event/e20221028nahida/vendors_d22f188050e9b1bdb959.js
+// 67417
+
 export class SkeletonMesh extends THREE.Object3D {
 	tempPos: Vector2 = new Vector2();
 	tempUv: Vector2 = new Vector2();
