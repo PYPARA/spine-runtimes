@@ -39,6 +39,8 @@ struct SpineRendererObject;
 
 class SpineSprite;
 
+class Attachment;
+
 class SpineMesh2D : public Node2D {
 	GDCLASS(SpineMesh2D, Node2D);
 
@@ -53,10 +55,30 @@ protected:
 	Vector<Color> colors;
 	Vector<int> indices;
 	SpineRendererObject *renderer_object;
+	uint64_t last_indices_id;
+	uint64_t indices_id;
+	RID mesh;			
+	uint32_t surface_offsets[RS::ARRAY_MAX];
+	int num_vertices;
+	int num_indices;
+	PackedByteArray vertex_buffer;
+	PackedByteArray attribute_buffer;
+	uint32_t vertex_stride;
+	uint32_t attribute_stride;	
 
 public:
-	SpineMesh2D() : renderer_object(nullptr){};
-	~SpineMesh2D(){};
+	SpineMesh2D() : renderer_object(nullptr), last_indices_id(0), indices_id(0), num_vertices(0), num_indices(0), vertex_stride(0), attribute_stride(0) {};
+	~SpineMesh2D() {
+		if (mesh.is_valid()) {
+			RS::get_singleton()->free(mesh);
+		}
+	}
+
+	void update_mesh(const Vector<Point2> &vertices,
+					 const Vector<Point2> &uvs,
+					 const Vector<Color> &colors,
+					 const Vector<int> &indices,
+					 SpineRendererObject *renderer_object);
 };
 
 class SpineSprite : public Node2D,
@@ -76,6 +98,8 @@ protected:
 	bool preview_frame;
 	float preview_time;
 
+	bool debug_root;
+	Color debug_root_color;
 	bool debug_bones;
 	Color debug_bones_color;
 	float debug_bones_thickness;
@@ -157,6 +181,14 @@ public:
 	Ref<Material> get_screen_material();
 
 	void set_screen_material(Ref<Material> material);
+
+	bool get_debug_root() { return debug_root; }
+
+	void set_debug_root(bool root) { debug_root = root; }
+
+	Color get_debug_root_color() { return debug_root_color; }
+
+	void set_debug_root_color(const Color &color) { debug_root_color = color; }
 
 	bool get_debug_bones() { return debug_bones; }
 
