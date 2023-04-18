@@ -65,7 +65,7 @@ half3 LightweightLightVertexSimplified(float3 positionWS, half3 normalWS, out ha
 		additionalLightColor += ProcessLight(positionWS, normalWS, meshRenderingLayers, lightIndex);
 	}
 #else // !USE_FORWARD_PLUS
-	int pixelLightCount = GetAdditionalLightsCount();
+	uint pixelLightCount = GetAdditionalLightsCount();
 	LIGHT_LOOP_BEGIN_SPINE(pixelLightCount)
 		additionalLightColor += ProcessLight(positionWS, normalWS, meshRenderingLayers, lightIndex);
 	LIGHT_LOOP_END_SPINE
@@ -84,9 +84,9 @@ half3 LightweightLightFragmentSimplified(float3 positionWS, float2 positionCS, h
 	InputData inputData; // LIGHT_LOOP_BEGIN macro requires InputData struct in USE_FORWARD_PLUS branch
 	inputData.positionWS = positionWS;
 	inputData.normalizedScreenSpaceUV = GetNormalizedScreenSpaceUV(positionCS);
-	
+
 	uint meshRenderingLayers = GetMeshRenderingLayerBackwardsCompatible();
-	int pixelLightCount = GetAdditionalLightsCount();
+	uint pixelLightCount = GetAdditionalLightsCount();
 	LIGHT_LOOP_BEGIN_SPINE(pixelLightCount)
 		additionalLightColor += ProcessLight(positionWS, normalWS, meshRenderingLayers, lightIndex);
 	LIGHT_LOOP_END_SPINE
@@ -124,7 +124,7 @@ VertexOutput vert(appdata v) {
 	if (color.a == 0) {
 		o.color = color;
 #if defined(SKELETONLIT_RECEIVE_SHADOWS)
-		o.shadowedColor = color;
+		o.shadowedColor = color.rgb;
 		o.shadowCoord = float4(0, 0, 0, 0);
 #endif
 		return o;
@@ -152,7 +152,7 @@ VertexOutput vert(appdata v) {
 }
 
 half4 frag(VertexOutput i
-#ifdef _WRITE_RENDERING_LAYERS
+#ifdef USE_WRITE_RENDERING_LAYERS
 	, out float4 outRenderingLayers : SV_Target1
 #endif
 ) : SV_Target0
@@ -169,8 +169,10 @@ half4 frag(VertexOutput i
 	// USE_FORWARD_PLUS lights need to be processed in fragment shader,
 	// otherwise light culling by vertex will create a very bad lighting result.
 	half3 shadowedColor;
-	i.color.rgb += LightweightLightFragmentSimplified(i.positionWS, i.pos, i.normalWS, shadowedColor);
+	i.color.rgb += LightweightLightFragmentSimplified(i.positionWS, i.pos.xy, i.normalWS, shadowedColor);
+#if defined(SKELETONLIT_RECEIVE_SHADOWS)
 	i.shadowedColor += shadowedColor;
+#endif
 #endif
 
 #if defined(SKELETONLIT_RECEIVE_SHADOWS)
@@ -178,7 +180,7 @@ half4 frag(VertexOutput i
 	i.color.rgb = lerp(i.shadowedColor, i.color.rgb, shadowAttenuation);
 #endif
 
-#ifdef _WRITE_RENDERING_LAYERS
+#ifdef USE_WRITE_RENDERING_LAYERS
 	uint renderingLayers = GetMeshRenderingLayerBackwardsCompatible();
 	outRenderingLayers = float4(EncodeMeshRenderingLayer(renderingLayers), 0, 0, 0);
 #endif

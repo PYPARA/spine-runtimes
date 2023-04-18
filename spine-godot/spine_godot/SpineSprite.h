@@ -55,24 +55,47 @@ protected:
 	Vector<Color> colors;
 	Vector<int> indices;
 	SpineRendererObject *renderer_object;
+
+#if VERSION_MAJOR > 3
 	uint64_t last_indices_id;
 	uint64_t indices_id;
-	RID mesh;			
+	RID mesh;
 	uint32_t surface_offsets[RS::ARRAY_MAX];
 	int num_vertices;
 	int num_indices;
 	PackedByteArray vertex_buffer;
 	PackedByteArray attribute_buffer;
 	uint32_t vertex_stride;
-	uint32_t attribute_stride;	
+	uint32_t attribute_stride;
+#else
+	uint64_t last_indices_id;
+	uint64_t indices_id;
+	RID mesh;
+	uint32_t surface_offsets[VS::ARRAY_MAX];
+	int num_vertices;
+	int num_indices;
+	uint32_t mesh_surface_offsets[VS::ARRAY_MAX];
+	PoolByteArray mesh_buffer;
+	uint32_t mesh_stride[VS::ARRAY_MAX];
+	uint32_t mesh_surface_format;
+#endif
 
 public:
-	SpineMesh2D() : renderer_object(nullptr), last_indices_id(0), indices_id(0), num_vertices(0), num_indices(0), vertex_stride(0), attribute_stride(0) {};
+#if VERSION_MAJOR > 3
+	SpineMesh2D() : renderer_object(nullptr), last_indices_id(0), indices_id(0), num_vertices(0), num_indices(0), vertex_stride(0), attribute_stride(0){};
 	~SpineMesh2D() {
 		if (mesh.is_valid()) {
 			RS::get_singleton()->free(mesh);
 		}
 	}
+#else
+	SpineMesh2D() : renderer_object(nullptr), last_indices_id(0), indices_id(0), num_vertices(0), num_indices(0){};
+	~SpineMesh2D() {
+		if (mesh.is_valid()) {
+			VS::get_singleton()->free(mesh);
+		}
+	}
+#endif
 
 	void update_mesh(const Vector<Point2> &vertices,
 					 const Vector<Point2> &uvs,

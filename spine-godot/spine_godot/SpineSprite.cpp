@@ -33,14 +33,14 @@
 #include "SpineSkeleton.h"
 #include "SpineRendererObject.h"
 #include "SpineSlotNode.h"
-#include "core/math/transform_2d.h"
-#include "core/variant/array.h"
-#include "scene/resources/mesh.h"
-#include "servers/rendering_server.h"
 
 #if VERSION_MAJOR > 3
 #include "core/config/engine.h"
 #include "core/math/geometry_2d.h"
+#include "core/math/transform_2d.h"
+#include "core/variant/array.h"
+#include "scene/resources/mesh.h"
+#include "servers/rendering_server.h"
 #else
 #include "core/engine.h"
 #endif
@@ -57,6 +57,7 @@ static int sprite_count = 0;
 static spine::Vector<unsigned short> quad_indices;
 static spine::Vector<float> scratch_vertices;
 static Vector<Vector2> scratch_points;
+
 
 static void clear_triangles(SpineMesh2D *mesh_instance) {
 #if VERSION_MAJOR > 3
@@ -75,6 +76,10 @@ static void add_triangles(SpineMesh2D *mesh_instance,
 #if VERSION_MAJOR > 3
 	mesh_instance->update_mesh(vertices, uvs, colors, indices, renderer_object);
 #else
+#define USE_MESH 0
+#if USE_MESH
+	mesh_instance->update_mesh(vertices, uvs, colors, indices, renderer_object);
+#else
 	auto texture = renderer_object->texture;
 	auto normal_map = renderer_object->normal_map;
 	VisualServer::get_singleton()->canvas_item_add_triangle_array(mesh_instance->get_canvas_item(),
@@ -87,6 +92,7 @@ static void add_triangles(SpineMesh2D *mesh_instance,
 																  texture.is_null() ? RID() : texture->get_rid(),
 																  -1,
 																  normal_map.is_null() ? RID() : normal_map->get_rid());
+#endif
 #endif
 }
 
@@ -103,7 +109,7 @@ void SpineMesh2D::_notification(int what) {
 			update();
 #endif
 			break;
-		case NOTIFICATION_DRAW:			
+		case NOTIFICATION_DRAW:
 			clear_triangles(this);
 			if (renderer_object)
 				add_triangles(this, vertices, uvs, colors, indices, renderer_object);
@@ -124,7 +130,7 @@ void SpineMesh2D::update_mesh(const Vector<Point2> &vertices,
 #if VERSION_MAJOR > 3
 	if (!mesh.is_valid() || vertices.size() != num_vertices || indices.size() != num_indices || last_indices_id != indices_id) {
 		if (mesh.is_valid()) {
-			RS::get_singleton()->free(mesh);			
+			RS::get_singleton()->free(mesh);
 		}
 		mesh = RS::get_singleton()->mesh_create();
 		Array arrays;
@@ -136,7 +142,7 @@ void SpineMesh2D::update_mesh(const Vector<Point2> &vertices,
 		RS::SurfaceData surface;
 		uint32_t skin_stride;
 		RS::get_singleton()->mesh_create_surface_data_from_arrays(&surface, (RS::PrimitiveType) Mesh::PRIMITIVE_TRIANGLES, arrays, TypedArray<Array>(), Dictionary(), Mesh::ArrayFormat::ARRAY_FLAG_USE_DYNAMIC_UPDATE);
-		RS::get_singleton()->mesh_add_surface(mesh, surface);		
+		RS::get_singleton()->mesh_add_surface(mesh, surface);
 		RS::get_singleton()->mesh_surface_make_offsets_from_format(surface.format, surface.vertex_count, surface.index_count, surface_offsets, vertex_stride, attribute_stride, skin_stride);
 		num_vertices = vertices.size();
 		num_indices = indices.size();
@@ -173,6 +179,64 @@ void SpineMesh2D::update_mesh(const Vector<Point2> &vertices,
 	}
 
 	RenderingServer::get_singleton()->canvas_item_add_mesh(this->get_canvas_item(), mesh, Transform2D(), Color(1, 1, 1, 1), renderer_object->canvas_texture->get_rid());
+#else
+	if (!mesh.is_valid() || vertices.size() != num_vertices || indices.size() != num_indices || last_indices_id != indices_id) {
+		if (mesh.is_valid()) {
+			VS::get_singleton()->free(mesh);
+		}
+		mesh = VS::get_singleton()->mesh_create();
+		Array arrays;
+		arrays.resize(Mesh::ARRAY_MAX);
+		arrays[Mesh::ARRAY_VERTEX] = vertices;
+		arrays[Mesh::ARRAY_TEX_UV] = uvs;
+		arrays[Mesh::ARRAY_COLOR] = colors;
+		arrays[Mesh::ARRAY_INDEX] = indices;
+		uint32_t compress_format = (VS::ARRAY_COMPRESS_DEFAULT & ~VS::ARRAY_COMPRESS_TEX_UV);
+		VS::get_singleton()->mesh_add_surface_from_arrays(mesh, (VS::PrimitiveType) Mesh::PRIMITIVE_TRIANGLES, arrays, Array(), compress_format);
+		int surface_vertex_len = VS::get_singleton()->mesh_surface_get_array_len(mesh, 0);
+		int surface_index_len = VS::get_singleton()->mesh_surface_get_array_index_len(mesh, 0);
+		mesh_surface_format = VS::get_singleton()->mesh_surface_get_format(mesh, 0);
+		mesh_buffer = VS::get_singleton()->mesh_surface_get_array(mesh, 0);
+		VS::get_singleton()->mesh_surface_make_offsets_from_format(mesh_surface_format, surface_vertex_len, surface_index_len, mesh_surface_offsets, mesh_stride);
+		num_vertices = vertices.size();
+		num_indices = indices.size();
+		last_indices_id = indices_id;
+	} else {
+		AABB aabb_new;
+		PoolVector<uint8_t>::Write write_buffer = mesh_buffer.write();
+
+		uint8_t color[4] = {
+				uint8_t(CLAMP(colors[0].r * 255.0, 0.0, 255.0)),
+				uint8_t(CLAMP(colors[0].g * 255.0, 0.0, 255.0)),
+				uint8_t(CLAMP(colors[0].b * 255.0, 0.0, 255.0)),
+				uint8_t(CLAMP(colors[0].a * 255.0, 0.0, 255.0))};
+
+		for (int i = 0; i < vertices.size(); i++) {
+			Vector2 vertex(vertices[i]);
+			if (i == 0) {
+				aabb_new.position = Vector3(vertex.x, vertex.y, 0);
+				aabb_new.size = Vector3();
+			} else {
+				aabb_new.expand_to(Vector3(vertex.x, vertex.y, 0));
+			}
+
+			float uv[2] = {(float) uvs[i].x, (float) uvs[i].y};
+			memcpy(&write_buffer[i * mesh_stride[VS::ARRAY_VERTEX] + mesh_surface_offsets[VS::ARRAY_VERTEX]], &vertex, sizeof(float) * 2);
+			memcpy(&write_buffer[i * mesh_stride[VS::ARRAY_TEX_UV] + mesh_surface_offsets[VS::ARRAY_TEX_UV]], uv, 8);
+			memcpy(&write_buffer[i * mesh_stride[VS::ARRAY_COLOR] + mesh_surface_offsets[VS::ARRAY_COLOR]], color, 4);
+		}
+		write_buffer.release();
+		VS::get_singleton()->mesh_surface_update_region(mesh, 0, 0, mesh_buffer);
+		VS::get_singleton()->mesh_set_custom_aabb(mesh, aabb_new);
+	}
+
+	VS::get_singleton()->canvas_item_add_mesh(
+			this->get_canvas_item(),
+			mesh,
+			Transform2D(),
+			Color(1, 1, 1, 1),
+			renderer_object->texture.is_null() ? RID() : renderer_object->texture->get_rid(),
+			renderer_object->normal_map.is_null() ? RID() : renderer_object->normal_map->get_rid());
 #endif
 }
 
@@ -647,7 +711,7 @@ void SpineSprite::update_meshes(Ref<SpineSkeleton> skeleton_ref) {
 
 			vertices->setSize(8, 0);
 			region->computeWorldVertices(*slot, *vertices, 0);
-			renderer_object = (SpineRendererObject *) ((spine::AtlasRegion *) region->getRendererObject())->page->getRendererObject();
+			renderer_object = (SpineRendererObject *) ((spine::AtlasRegion *) region->getRegion())->page->texture;
 			uvs = &region->getUVs();
 			indices = &quad_indices;
 
@@ -661,7 +725,7 @@ void SpineSprite::update_meshes(Ref<SpineSkeleton> skeleton_ref) {
 
 			vertices->setSize(mesh->getWorldVerticesLength(), 0);
 			mesh->computeWorldVertices(*slot, *vertices);
-			renderer_object = (SpineRendererObject *) ((spine::AtlasRegion *) mesh->getRendererObject())->page->getRendererObject();
+			renderer_object = (SpineRendererObject *) ((spine::AtlasRegion *) mesh->getRegion())->page->texture;
 			uvs = &mesh->getUVs();
 			indices = &mesh->getTriangles();
 
@@ -708,7 +772,9 @@ void SpineSprite::update_meshes(Ref<SpineSkeleton> skeleton_ref) {
 			}
 
 			mesh_instance->renderer_object = renderer_object;
-			mesh_instance->indices_id = (uint64_t)indices;			
+#if VERSION_MAJOR > 3
+			mesh_instance->indices_id = (uint64_t) indices;
+#endif
 			spine::BlendMode blend_mode = slot->getData().getBlendMode();
 			Ref<Material> custom_material;
 
@@ -755,18 +821,23 @@ void SpineSprite::update_meshes(Ref<SpineSkeleton> skeleton_ref) {
 			// Set the custom material, or the default material
 			if (custom_material.is_valid()) mesh_instance->set_material(custom_material);
 			else
-				mesh_instance->set_material(default_materials[slot->getData().getBlendMode()]);			
-		}		
+				mesh_instance->set_material(default_materials[slot->getData().getBlendMode()]);
+		}
 		skeleton_clipper->clipEnd(*slot);
 	}
 	skeleton_clipper->clipEnd();
 }
 
 void SpineSprite::draw() {
-	if (!animation_state.is_valid() && !skeleton.is_valid()) return;	
+	if (!animation_state.is_valid() && !skeleton.is_valid()) return;
 	if (!Engine::get_singleton()->is_editor_hint() && !get_tree()->is_debugging_collisions_hint()) return;
 
+#if VERSION_MAJOR > 3
 	RS::get_singleton()->canvas_item_clear(this->get_canvas_item());
+#else
+	VisualServer::get_singleton()->canvas_item_clear(this->get_canvas_item());
+#endif
+
 	auto mouse_position = get_local_mouse_position();
 	spine::Slot *hovered_slot = nullptr;
 
@@ -973,7 +1044,6 @@ void SpineSprite::draw() {
 #endif
 	}
 #endif
-
 }
 
 void SpineSprite::draw_bone(spine::Bone *bone, const Color &color) {
